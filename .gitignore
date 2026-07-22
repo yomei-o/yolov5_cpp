@@ -28,3 +28,5 @@ __pycache__/
 
 # shipped weights (committed despite the patterns above)
 !weights/yolov5n/weights.bin
+!weights/yolov5n/anchors.bin
+!yolov5n.pt

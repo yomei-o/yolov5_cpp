@@ -21,9 +21,22 @@ BCE + class BCE, `build_targets` with wh-ratio anchor matching — no DFL, no TA
 | `pure/net5.hpp` + `pure/m1_forward.cpp` | **full yolov5n forward** (Conv / C3 / SPPF / anchor head) | matches yolov5n ~2e-5 |
 | `pure/loss5.hpp` + `pure/m2_loss.cpp` | **anchor-based v5 loss** (build_targets + box CIoU + obj BCE + cls BCE) fwd+bwd | matches yolov5 `ComputeLoss`: loss ~6e-8, grads ~3e-9 |
 | `pure/m3_train.cpp` | **end-to-end training** (forward → loss → backward → Adam/cosine) | loss 3.3 → 1.1 |
+| `pure/infer5.hpp` + `pure/m4_infer.cpp` | **inference: anchor decode + NMS** | dets match yolov5 ~2e-4 |
+| `pure/m5_demo.cpp` | **real-image inference** (stb_image → letterbox → detect → annotate) | bus + 3 people |
 
-Planned next: decode + NMS inference and mAP (the engine/optimizers/dataloader/mAP are
-shared with yolov8_cpp).
+## Demo — real-image detection, no Python, no libraries
+Weights ship in the repo (`weights/yolov5n/`), so the pure detector runs from a checkout
+with only a C++ compiler + the two vendored single-header image libs:
+```sh
+g++ -std=c++20 -O2 -Ipure/third_party pure/m5_demo.cpp -o m5_demo   # or cl /std:c++20 /O2 /EHsc /Ipure\third_party pure\m5_demo.cpp
+./m5_demo assets/bus.jpg bus_out.png 640
+```
+| `assets/bus.jpg` → | `assets/zidane.jpg` → |
+|---|---|
+| ![bus](assets/bus_detected.png) | ![zidane](assets/zidane_detected.png) |
+
+These match yolov5n's own output (boxes ~2e-4 on the letterboxed input, same classes —
+see `pure/m4_infer.cpp`). Decode + NMS are in `pure/infer5.hpp`.
 
 ## Build
 ```sh
