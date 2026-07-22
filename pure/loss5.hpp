@@ -23,6 +23,23 @@ inline Tensor slice_cols(const Tensor& a, int64_t c0, int64_t c1) {
   return o;
 }
 
+// Detect head output (BS, na*no, ny, nx) -> prediction layout (BS, na, ny, nx, no),
+// matching yolov5's view(bs,na,no,ny,nx).permute(0,1,3,4,2). Differentiable.
+inline Tensor head_to_pred(const Tensor& h, int64_t na, int64_t no) {
+  int64_t BS = h->shape[0], C = h->shape[1], ny = h->shape[2], nx = h->shape[3];
+  auto o = make_tensor({BS, na, ny, nx, no}, true);
+  for (int64_t b = 0; b < BS; ++b) for (int64_t a = 0; a < na; ++a) for (int64_t y = 0; y < ny; ++y)
+    for (int64_t x = 0; x < nx; ++x) for (int64_t k = 0; k < no; ++k)
+      o->data[((((b*na+a)*ny+y)*nx+x)*no)+k] = h->data[(((b*C + a*no+k)*ny+y)*nx+x)];
+  o->parents = {h}; Node* op = o.get();
+  o->backward_fn = [h, op, BS, C, na, no, ny, nx] {
+    for (int64_t b = 0; b < BS; ++b) for (int64_t a = 0; a < na; ++a) for (int64_t y = 0; y < ny; ++y)
+      for (int64_t x = 0; x < nx; ++x) for (int64_t k = 0; k < no; ++k)
+        h->grad[(((b*C + a*no+k)*ny+y)*nx+x)] += op->grad[((((b*na+a)*ny+y)*nx+x)*no)+k];
+  };
+  return o;
+}
+
 inline Tensor sq5(const Tensor& z) { return mul(z, z); }
 
 // CIoU between paired boxes (N,4) xyxy -> (N,1). alpha detached (as yolov5/ultralytics).
