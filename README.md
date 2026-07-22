@@ -19,10 +19,10 @@ BCE + class BCE, `build_targets` with wh-ratio anchor matching — no DFL, no TA
 | file | milestone | result |
 |------|-----------|--------|
 | `pure/net5.hpp` + `pure/m1_forward.cpp` | **full yolov5n forward** (Conv / C3 / SPPF / anchor head) | matches yolov5n ~2e-5 |
+| `pure/loss5.hpp` + `pure/m2_loss.cpp` | **anchor-based v5 loss** (build_targets + box CIoU + obj BCE + cls BCE) fwd+bwd | matches yolov5 `ComputeLoss`: loss ~6e-8, grads ~3e-9 |
 
-Planned next: anchor-based v5 loss (forward + backward) vs the reference `ComputeLoss`,
-training loop, decode + NMS inference, and mAP. See the shared methodology in
-yolov8_cpp's PORTING_GUIDE.
+Planned next: training loop, decode + NMS inference, and mAP (the engine/optimizers/
+dataloader/mAP are shared with yolov8_cpp).
 
 ## Build
 ```sh
