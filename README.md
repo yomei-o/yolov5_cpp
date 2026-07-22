@@ -24,6 +24,8 @@ BCE + class BCE, `build_targets` with wh-ratio anchor matching — no DFL, no TA
 | `pure/infer5.hpp` + `pure/m4_infer.cpp` | **inference: anchor decode + NMS** | dets match yolov5 ~2e-4 |
 | `pure/m5_demo.cpp` | **real-image inference** (stb_image → letterbox → detect → annotate) | bus + 3 people |
 | `pure/metrics.hpp` + `pure/m6_map.cpp` | **COCO mAP** (AP@0.50, AP@0.50:0.95) | match pycocotools ~3e-7 |
+| `pure/net5_unfused.hpp` + `pure/m7_unfused.cpp` | unfused conv+BN+SiLU forward | matches yolov5n ~2e-5 |
+| `pure/m8_train_writeback.cpp` | **train (live BN) → write weights back to `.pt`** | serialization exact; yolov5 reloads it |
 
 ## Demo — real-image detection, no Python, no libraries
 Weights ship in the repo (`weights/yolov5n/`), so the pure detector runs from a checkout
