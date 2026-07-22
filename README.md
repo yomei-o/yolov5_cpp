@@ -26,6 +26,8 @@ BCE + class BCE, `build_targets` with wh-ratio anchor matching — no DFL, no TA
 | `pure/metrics.hpp` + `pure/m6_map.cpp` | **COCO mAP** (AP@0.50, AP@0.50:0.95) | match pycocotools ~3e-7 |
 | `pure/net5_unfused.hpp` + `pure/m7_unfused.cpp` | unfused conv+BN+SiLU forward | matches yolov5n ~2e-5 |
 | `pure/m8_train_writeback.cpp` | **train (live BN) → write weights back to `.pt`** | serialization exact; yolov5 reloads it |
+| `pure/onnx.hpp` + `pure/onnx_export5.cpp` | **ONNX writer** (hand-rolled protobuf, no deps) | onnxruntime runs it, ~1e-5 |
+| `pure/onnx_run.hpp` + `pure/m9_onnx_run.cpp` | **ONNX reader + graph interpreter** | pure engine runs the `.onnx`, ~2e-5 |
 
 ## Demo — real-image detection, no Python, no libraries
 Weights ship in the repo (`weights/yolov5n/`), so the pure detector runs from a checkout
