@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
   std::string out  = argc > 1 ? argv[1] : "init.pt";
   std::string mode = argc > 2 ? argv[2] : "rand";
   std::string pre  = argc > 3 ? argv[3] : "yolov5n.pt";
-  const std::string DN = "pure/ref/data_net/";
+  const std::string DN = argc > 4 ? argv[4] : "pure/ref/data_net/";   // arch dir (per-size for n/s/m/l/x)
 
   // architecture: one manifest line per layer, "kind Co Ci k s pad eps"; names.txt lists
   // the state_dict key for each emitted tensor, in the same (engine) order.
