@@ -11,6 +11,7 @@ int main() {
   const std::string D = "pure/ref/data_net/";
   auto prov = load_net(D);
   std::ifstream io(D + "io.txt"); int64_t IMG, nc, na, no, nl; io >> IMG >> nc >> na >> no >> nl;
+  std::vector<int64_t> d; { std::ifstream f(D+"depths.txt"); int64_t v; while(f>>v) d.push_back(v); }
 
   Graph g; g.opset = 13;
   g.inputs.push_back({"images", {1, 3, IMG, IMG}});
@@ -49,12 +50,12 @@ int main() {
   };
   auto sppf = [&](const std::string& x){ std::string x1=conv(x), q1=maxpool(x1), q2=maxpool(q1), q3=maxpool(q2); return conv(concat({x1,q1,q2,q3})); };
 
-  std::string x0=conv("images"), x1=conv(x0), x2=c3(x1,1,true), x3=conv(x2), x4=c3(x3,2,true),
-    x5=conv(x4), x6=c3(x5,3,true), x7=conv(x6), x8=c3(x7,1,true), x9=sppf(x8),
-    x10=conv(x9), x11=resize2x(x10), x12=concat({x11,x6}), x13=c3(x12,1,false),
-    x14=conv(x13), x15=resize2x(x14), x16=concat({x15,x4}), x17=c3(x16,1,false),
-    x18=conv(x17), x19=concat({x18,x14}), x20=c3(x19,1,false),
-    x21=conv(x20), x22=concat({x21,x10}), x23=c3(x22,1,false);
+  std::string x0=conv("images"), x1=conv(x0), x2=c3(x1,d[0],true), x3=conv(x2), x4=c3(x3,d[1],true),
+    x5=conv(x4), x6=c3(x5,d[2],true), x7=conv(x6), x8=c3(x7,d[3],true), x9=sppf(x8),
+    x10=conv(x9), x11=resize2x(x10), x12=concat({x11,x6}), x13=c3(x12,d[4],false),
+    x14=conv(x13), x15=resize2x(x14), x16=concat({x15,x4}), x17=c3(x16,d[5],false),
+    x18=conv(x17), x19=concat({x18,x14}), x20=c3(x19,d[6],false),
+    x21=conv(x20), x22=concat({x21,x10}), x23=c3(x22,d[7],false);
   std::string ins[3]={x17,x20,x23};
   for (int i = 0; i < 3; ++i) {
     std::string h = conv(ins[i]);                              // detect m[i] (plain)
