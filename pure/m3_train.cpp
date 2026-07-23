@@ -2,6 +2,7 @@
 // reshape -> anchor-based v5 loss -> backward -> Adam (cosine LR). Loss must drop.
 #include "net5.hpp"
 #include "loss5.hpp"
+#include <fstream>
 #include "optim.hpp"
 #include <cstdio>
 #include <random>
@@ -10,6 +11,7 @@ int main(int argc, char** argv) {
   const int ITERS = argc > 1 ? atoi(argv[1]) : 30;
   const std::string D = "pure/ref/data_net/";
   auto prov = load_net(D);
+  std::vector<int64_t> dep; { std::ifstream f(D + "depths.txt"); int64_t v; while (f >> v) dep.push_back(v); }
   std::vector<Tensor> params;
   for (auto& c : prov.convs) { params.push_back(c.w); params.push_back(c.b); }
   Adam opt(params, 1e-3f, 0.9f, 0.999f, 1e-8f, 0.f, false);
@@ -30,7 +32,7 @@ int main(int argc, char** argv) {
   printf("iter |   total     box      obj      cls      lr\n");
   for (int it = 0; it < ITERS; ++it) {
     prov.i = 0;
-    auto heads = yolov5n_forward(img, prov);
+    auto heads = yolov5n_forward(img, prov, dep);
     std::vector<Tensor> p;
     for (auto& h : heads) p.push_back(head_to_pred(h, na, no));
     auto L = compute_loss_v5(p, targets, NT, anchors, grids, BS, na, no, nc);
