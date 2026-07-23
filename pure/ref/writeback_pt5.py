@@ -8,7 +8,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DN = os.path.join(HERE, "data_net"); DW = os.path.join(HERE, "data_wb")
 def r(n, d=DW): return np.fromfile(os.path.join(d, n), np.float32)
 
-m = torch.hub.load("ultralytics/yolov5", "yolov5n", pretrained=True, autoshape=False, trust_repo=True, verbose=False)
+m = torch.hub.load("ultralytics/yolov5", (__import__("sys").argv[1] if len(__import__("sys").argv)>1 else "yolov5n"), pretrained=True, autoshape=False, trust_repo=True, verbose=False)
 seq = m.model.model
 mods = walk(seq)
 

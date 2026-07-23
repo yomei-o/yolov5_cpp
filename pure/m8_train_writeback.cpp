@@ -4,6 +4,7 @@
 //   run: m8_train_writeback [iters]   (0 = round-trip check on original weights)
 #include "net5_unfused.hpp"
 #include "loss5.hpp"
+#include <fstream>
 #include "optim.hpp"
 #include <cstdio>
 #include <random>
@@ -14,6 +15,7 @@ int main(int argc, char** argv) {
   const std::string D = "pure/ref/data_net/", D2 = "pure/ref/data_wb/";
   std::filesystem::create_directories(D2);
   auto prov = load_net_unfused(D);
+  std::vector<int64_t> dep; { std::ifstream f(D + "depths.txt"); int64_t v; while (f >> v) dep.push_back(v); }
   std::vector<Tensor> params;
   for (auto& L : prov.layers) { params.push_back(L.w); if (L.kind == 1) { params.push_back(L.gamma); params.push_back(L.beta); } else params.push_back(L.b); }
   Adam opt(params, 1e-3f, 0.9f, 0.999f, 1e-8f, 0.f, false);
@@ -31,7 +33,7 @@ int main(int argc, char** argv) {
   printf("iter |   total     box      obj      cls\n");
   for (int it = 0; it < ITERS; ++it) {
     prov.i = 0;
-    auto heads = yolov5n_forward_u(img, prov, true);
+    auto heads = yolov5n_forward_u(img, prov, true, dep);
     std::vector<Tensor> p; for (auto& h : heads) p.push_back(head_to_pred(h, na, no));
     auto L = compute_loss_v5(p, targets, NT, anchors, grids, BS, na, no, nc);
     backward(L.total);
@@ -48,7 +50,7 @@ int main(int argc, char** argv) {
     else wr("cb"+s+".bin", L.b->data);
   }
   auto x = from_data({1, 3, S, S}, rd(D + "x.bin"));
-  prov.i = 0; auto hv = yolov5n_forward_u(x, prov, false);
+  prov.i = 0; auto hv = yolov5n_forward_u(x, prov, false, dep);
   std::vector<float> head; for (auto& h : hv) head.insert(head.end(), h->data.begin(), h->data.end());
   wr("cpp_head.bin", head);
   printf("wrote updated weights + eval forward to %s\n", D2.c_str());

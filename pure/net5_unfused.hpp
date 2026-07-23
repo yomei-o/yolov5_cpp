@@ -45,18 +45,19 @@ inline Tensor sppf_u(const Tensor& x, ProviderU& p, bool tr) {
   auto q1 = maxpool2d(x1, 5, 1, 2), q2 = maxpool2d(q1, 5, 1, 2), q3 = maxpool2d(q2, 5, 1, 2);
   return applyU(concat_ch({x1, q1, q2, q3}), p.next(), tr);
 }
-inline std::vector<Tensor> yolov5n_forward_u(const Tensor& x, ProviderU& p, bool tr) {
+inline std::vector<Tensor> yolov5n_forward_u(const Tensor& x, ProviderU& p, bool tr,
+                                             const std::vector<int64_t>& d = {1,2,3,1,1,1,1,1}) {
   auto x0 = cLU(x, p, tr); auto x1 = cLU(x0, p, tr);
-  auto x2 = c3_u(x1, p, 1, true, tr); auto x3 = cLU(x2, p, tr);
-  auto x4 = c3_u(x3, p, 2, true, tr); auto x5 = cLU(x4, p, tr);
-  auto x6 = c3_u(x5, p, 3, true, tr); auto x7 = cLU(x6, p, tr);
-  auto x8 = c3_u(x7, p, 1, true, tr); auto x9 = sppf_u(x8, p, tr);
+  auto x2 = c3_u(x1, p, d[0], true, tr); auto x3 = cLU(x2, p, tr);
+  auto x4 = c3_u(x3, p, d[1], true, tr); auto x5 = cLU(x4, p, tr);
+  auto x6 = c3_u(x5, p, d[2], true, tr); auto x7 = cLU(x6, p, tr);
+  auto x8 = c3_u(x7, p, d[3], true, tr); auto x9 = sppf_u(x8, p, tr);
   auto x10 = cLU(x9, p, tr); auto x11 = upsample_nearest(x10, 2);
-  auto x12 = concat_ch({x11, x6}); auto x13 = c3_u(x12, p, 1, false, tr);
+  auto x12 = concat_ch({x11, x6}); auto x13 = c3_u(x12, p, d[4], false, tr);
   auto x14 = cLU(x13, p, tr); auto x15 = upsample_nearest(x14, 2);
-  auto x16 = concat_ch({x15, x4}); auto x17 = c3_u(x16, p, 1, false, tr);
-  auto x18 = cLU(x17, p, tr); auto x19 = concat_ch({x18, x14}); auto x20 = c3_u(x19, p, 1, false, tr);
-  auto x21 = cLU(x20, p, tr); auto x22 = concat_ch({x21, x10}); auto x23 = c3_u(x22, p, 1, false, tr);
+  auto x16 = concat_ch({x15, x4}); auto x17 = c3_u(x16, p, d[5], false, tr);
+  auto x18 = cLU(x17, p, tr); auto x19 = concat_ch({x18, x14}); auto x20 = c3_u(x19, p, d[6], false, tr);
+  auto x21 = cLU(x20, p, tr); auto x22 = concat_ch({x21, x10}); auto x23 = c3_u(x22, p, d[7], false, tr);
   std::vector<Tensor> out; for (auto& xi : {x17, x20, x23}) out.push_back(applyU(xi, p.next(), tr));
   return out;
 }

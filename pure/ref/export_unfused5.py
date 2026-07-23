@@ -2,13 +2,14 @@
 conv + BatchNorm2d + SiLU as separate ops (for BN training and .pt write-back). Writes
 into data_net/ alongside the fused export (reuses its x.bin / ref_head.bin).
 Usage: python export_unfused5.py"""
-import os, torch
+import os, sys, torch
 from yolo5_walk import walk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 D = os.path.join(HERE, "data_net"); os.makedirs(D, exist_ok=True)
 
-m = torch.hub.load("ultralytics/yolov5", "yolov5n", pretrained=True, autoshape=False, trust_repo=True, verbose=False)
+MODEL = sys.argv[1] if len(sys.argv) > 1 else "yolov5n"
+m = torch.hub.load("ultralytics/yolov5", MODEL, pretrained=True, autoshape=False, trust_repo=True, verbose=False)
 mods = walk(m.model.model.eval())
 
 def save(n, t): t.detach().contiguous().float().cpu().numpy().tofile(os.path.join(D, n))
