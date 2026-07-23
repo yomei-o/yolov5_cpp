@@ -7,7 +7,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 D = os.path.join(HERE, "data_net"); os.makedirs(D, exist_ok=True)
 IMG = int(sys.argv[1]) if len(sys.argv) > 1 else 64
 
-m = torch.hub.load("ultralytics/yolov5", "yolov5n", pretrained=True, autoshape=False, trust_repo=True, verbose=False)
+MODEL = sys.argv[2] if len(sys.argv) > 2 else "yolov5n"
+m = torch.hub.load("ultralytics/yolov5", MODEL, pretrained=True, autoshape=False, trust_repo=True, verbose=False)
 seq = m.model.model.eval()
 det = seq[-1]
 
@@ -29,10 +30,11 @@ def emit_c3(b):                                   # cv1, (bott.cv1,bott.cv2)*n, 
     emit(b.cv2); emit(b.cv3)
 def emit_sppf(b): emit(b.cv1); emit(b.cv2)
 
+depths = []
 for i, mod in enumerate(seq):
     t = type(mod).__name__
     if t == "Conv": emit(mod)
-    elif t == "C3": emit_c3(mod)
+    elif t == "C3": emit_c3(mod); depths.append(len(mod.m))
     elif t == "SPPF": emit_sppf(mod)
     elif t == "Detect":
         for cc in mod.m: emit_plain(cc)
@@ -44,6 +46,7 @@ for i, (w, b, k, s, p, act) in enumerate(convs):
     blob.append(w.detach().cpu().numpy().ravel()); blob.append(b.detach().cpu().numpy().ravel())
     lines.append(f"{w.shape[0]} {w.shape[1]} {k} {s} {p} {act}")
 open(os.path.join(D, "manifest.txt"), "w").write("\n".join(lines) + "\n")
+open(os.path.join(D, "depths.txt"), "w").write(" ".join(map(str, depths)) + "\n")
 np.concatenate(blob).astype(np.float32).tofile(os.path.join(D, "weights.bin"))
 
 # reference: capture the 3 detect-head conv outputs (bs,255,ny,nx) via hooks (BN in eval)

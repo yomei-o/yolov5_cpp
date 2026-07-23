@@ -8,7 +8,8 @@ int main() {
   std::ifstream io(D + "io.txt"); int64_t IMG; io >> IMG;
   auto x = from_data({1, 3, IMG, IMG}, rd(D + "x.bin"));
 
-  auto heads = yolov5n_forward(x, prov);
+  std::vector<int64_t> dep; { std::ifstream f(D + "depths.txt"); int64_t v; while (f >> v) dep.push_back(v); }
+  auto heads = yolov5n_forward(x, prov, dep);
   printf("consumed %zu/%zu convs, %zu head levels\n", prov.i, prov.convs.size(), heads.size());
 
   // pack the 3 head outputs (1,C,ny,nx) channel-major per level, concatenated

@@ -68,32 +68,34 @@ inline Tensor sppf(const Tensor& x, Provider& p) {
   return conv_apply(concat_ch({x1, q1, q2, q3}), p.next());
 }
 
-// Full yolov5n forward. Returns the 3 raw detect-head outputs (1, na*no, ny, nx).
-inline std::vector<Tensor> yolov5n_forward(const Tensor& x, Provider& p) {
+// Full yolov5 forward (n/s/m/l/x). dep = C3 repeat counts in forward order (8 blocks);
+// widths are data-driven from the loaded conv shapes. Returns 3 raw detect-head outputs.
+inline std::vector<Tensor> yolov5n_forward(const Tensor& x, Provider& p,
+                                           const std::vector<int64_t>& dep = {1,2,3,1,1,1,1,1}) {
   auto x0 = cL(x, p);                 // 0 Conv k6s2
   auto x1 = cL(x0, p);               // 1 Conv
-  auto x2 = c3(x1, p, 1, true);      // 2 C3
+  auto x2 = c3(x1, p, dep[0], true);      // 2 C3
   auto x3 = cL(x2, p);              // 3 Conv
-  auto x4 = c3(x3, p, 2, true);      // 4 C3   (save)
+  auto x4 = c3(x3, p, dep[1], true);      // 4 C3   (save)
   auto x5 = cL(x4, p);              // 5 Conv
-  auto x6 = c3(x5, p, 3, true);      // 6 C3   (save)
+  auto x6 = c3(x5, p, dep[2], true);      // 6 C3   (save)
   auto x7 = cL(x6, p);              // 7 Conv
-  auto x8 = c3(x7, p, 1, true);      // 8 C3
+  auto x8 = c3(x7, p, dep[3], true);      // 8 C3
   auto x9 = sppf(x8, p);             // 9 SPPF
   auto x10 = cL(x9, p);             // 10 Conv (save)
   auto x11 = upsample_nearest(x10, 2);          // 11
   auto x12 = concat_ch({x11, x6});              // 12
-  auto x13 = c3(x12, p, 1, false);   // 13 C3
+  auto x13 = c3(x12, p, dep[4], false);   // 13 C3
   auto x14 = cL(x13, p);            // 14 Conv (save)
   auto x15 = upsample_nearest(x14, 2);          // 15
   auto x16 = concat_ch({x15, x4});              // 16
-  auto x17 = c3(x16, p, 1, false);   // 17 C3  -> P3
+  auto x17 = c3(x16, p, dep[5], false);   // 17 C3  -> P3
   auto x18 = cL(x17, p);            // 18 Conv
   auto x19 = concat_ch({x18, x14});             // 19
-  auto x20 = c3(x19, p, 1, false);   // 20 C3  -> P4
+  auto x20 = c3(x19, p, dep[6], false);   // 20 C3  -> P4
   auto x21 = cL(x20, p);            // 21 Conv
   auto x22 = concat_ch({x21, x10});             // 22
-  auto x23 = c3(x22, p, 1, false);   // 23 C3  -> P5
+  auto x23 = c3(x22, p, dep[7], false);   // 23 C3  -> P5
   std::vector<Tensor> out;
   for (auto& xi : {x17, x20, x23}) out.push_back(conv_apply(xi, p.next()));  // Detect m[i] (plain)
   return out;
