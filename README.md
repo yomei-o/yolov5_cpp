@@ -1,5 +1,23 @@
 # yolov5_cpp
 
+
+## Train with your own dataset (standard YOLO) + mosaic
+
+`pure/train_cli.cpp` trains from a **standard Ultralytics/YOLO dataset**: pass an images
+directory (or a list file) plus `imgsz`, and it scans `images/`↔`labels/`, reads normalised
+`cls xc yc w h` labels, and letterboxes arbitrary-size images. A 7th arg toggles **mosaic**
+augmentation (on by default in this mode; flip + brightness always on).
+
+```sh
+python pure/ref/make_synth_yolo.py 40      # tiny dataset in the standard images/ + labels/ layout
+./make_init_pt init.pt from yolov5n.pt     # initial weights .pt, pure C++
+./train_cli pure/ref/data_yolo/images/train pure/ref/data_yolo/images/val 6 4 init.pt 96 0
+#   fmt=yolo ... val mAP@0.5 -> 0.93 ; best.pt reloads in the yolov5 reference (0 unexpected)
+```
+
+**Remaining work** (real-dataset convergence parity, richer augmentation, `data.yaml`/unified
+CLI, EMA/resume) is tracked in **[RESUME.md](RESUME.md)**.
+
 Training **YOLOv5** (the classic anchor-based model) in C++ with **zero external
 dependencies** — a from-scratch reverse-mode autograd engine, C++ standard library only
 (plus two vendored single-header image libs for the demo). Every step is **verified

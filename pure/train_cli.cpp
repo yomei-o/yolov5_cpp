@@ -18,21 +18,26 @@
 #include <random>
 
 int main(int argc, char** argv) {
+  setvbuf(stdout, nullptr, _IONBF, 0);   // unbuffered so per-epoch progress shows in redirected/background runs
   std::string trainL = argc>1?argv[1]:"pure/ref/data_synth/list.txt";
   std::string valL   = argc>2?argv[2]:"pure/ref/data_synth/val.txt";
   int EPOCHS = argc>3?atoi(argv[3]):8, BATCH = argc>4?atoi(argv[4]):4;
   std::string initpt = argc>5?argv[5]:"yolov5n.pt";
+  int imgsz = argc>6?atoi(argv[6]):0;                 // >0 => standard-YOLO dataset (dir/list + normalised labels)
+  bool mosaic = argc>7?atoi(argv[7])!=0:(imgsz>0);    // mosaic on by default in YOLO mode
   const std::string DN = "pure/ref/data_net/";
   const int64_t NC = 80, NA = 3, NO = 85;
 
-  Dataset tr = read_dataset(trainL), va = read_dataset(valL);
+  Dataset tr, va;
+  if (imgsz>0) { tr = read_yolo_dataset(trainL, imgsz); va = read_yolo_dataset(valL, imgsz); }
+  else { tr = read_dataset(trainL); va = read_dataset(valL); }
   int64_t S = tr.S;
   auto anchors = rd(DN + "anchors.bin");
   std::vector<int64_t> grids = {S/8, S/16, S/32};
   std::vector<int> strides = {8, 16, 32};
   std::vector<int64_t> dep; { std::ifstream f(DN + "depths.txt"); int64_t v; while (f >> v) dep.push_back(v); }
   if (dep.empty()) dep = {1,2,3,1,1,1,1,1};
-  printf("train=%zu val=%zu imgsz=%lld batch=%d epochs=%d\n", tr.items.size(), va.items.size(), (long long)S, BATCH, EPOCHS);
+  printf("train=%zu val=%zu imgsz=%lld batch=%d epochs=%d fmt=%s mosaic=%d\n", tr.items.size(), va.items.size(), (long long)S, BATCH, EPOCHS, tr.yolo?"yolo":"legacy", (int)mosaic);
 
   // initial weights: from the init .pt (pure-C++ read, arch from the tiny manifest) if it
   // exists, else from the Python-exported .bin files.
@@ -56,14 +61,13 @@ int main(int argc, char** argv) {
   auto validate = [&]() -> double {
     std::vector<mapeval::Image> imgs;
     for (auto& s : va.items) {
-      Dataset one; one.S=S; one.items={s};
-      Batch b = load_minibatch(one, {0}, false, 0);
-      prov.i=0; auto hv = yolov5n_forward_u(b.x, prov, false, dep);
+      Letterbox lb; auto xi = load_image_letterbox(s.img, S, lb);   // no aug/mosaic at eval
+      prov.i=0; auto hv = yolov5n_forward_u(xi, prov, false, dep);
       int64_t N; auto pred = decode5(hv, anchors, strides, NA, NO, NC, N);
       auto dets = nms5(pred, N, NO, NC, 0.25f, 0.45f, 100);
       mapeval::Image im;
       for (auto& d : dets) im.dts.push_back({d.x1,d.y1,d.x2,d.y2,d.cls,d.conf});
-      std::vector<float> gb; std::vector<int64_t> gl; int m = load_labels(s.lbl, gb, gl);
+      std::vector<float> gb; std::vector<int64_t> gl; int m = load_boxes_orig(s.lbl, va.yolo, lb.w0, lb.h0, gb, gl); lb_map(gb, lb);
       for (int j=0;j<m;++j) im.gts.push_back({gb[j*4],gb[j*4+1],gb[j*4+2],gb[j*4+3],(int)gl[j]});
       imgs.push_back(im);
     }
@@ -78,7 +82,7 @@ int main(int argc, char** argv) {
     std::shuffle(order.begin(), order.end(), rng); double eloss = 0; int nb = 0;
     for (size_t off = 0; off < order.size(); off += BATCH) {
       std::vector<int> idx(order.begin()+off, order.begin()+std::min(order.size(), off+BATCH));
-      Batch bt = load_minibatch(tr, idx, true, rng());
+      Batch bt = load_minibatch(tr, idx, true, rng(), mosaic);
       int64_t B = bt.B, M = bt.M;
       // build normalized targets (NT,6) = [img, cls, xn, yn, wn, hn]
       std::vector<float> targets; int NT = 0;
