@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
   // exists, else from the Python-exported .bin files.
   ProviderU prov; { std::ifstream t(initpt); if (t.good()) { printf("init weights <- %s (pure C++)\n", initpt.c_str()); prov = load_net_unfused_pt(DN, initpt); } else prov = load_net_unfused(DN); }
   std::vector<Tensor> params; for (auto& L : prov.layers) { params.push_back(L.w); if (L.kind==1){params.push_back(L.gamma);params.push_back(L.beta);} else params.push_back(L.b); }
-  Adam opt(params, 2e-3f, 0.9f, 0.999f, 1e-8f, 5e-4f, false);
+  Adam opt(params, 1e-3f, 0.9f, 0.999f, 1e-8f, 5e-4f, false);
 
   // state_dict KEY per engine tensor (engine/C3 emit order != state_dict order; pair by
   // name — load_state_dict matches by key). names.txt is emitted by export_unfused5.py.
@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
       std::vector<Tensor> p; for (auto& h : heads) p.push_back(head_to_pred(h, NA, NO));
       auto L = compute_loss_v5(p, targets, NT, anchors, grids, B, NA, NO, NC);
       backward(L.total);
-      opt.lr = cosine_lr(gstep, total, 2e-3f, std::max(1, total/20)); opt.step(); ++gstep;
+      opt.lr = cosine_lr(gstep, total, 1e-3f, std::max(1, total/20)); opt.step(); ++gstep;
       eloss += L.total->data[0]; ++nb;
     }
     double m50 = validate();
