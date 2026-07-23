@@ -128,3 +128,18 @@ cl /std:c++20 /O2 /EHsc pure/m1_forward.cpp                 # MSVC (std::thread 
 The repository's own code is **BSD 3-Clause** — see [LICENSE](LICENSE). Bundled
 third-party components keep their own licenses (Ultralytics YOLOv5 weights **AGPL-3.0**,
 stb **public-domain / MIT**) — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Unified CLI + `data.yaml`
+
+`pure/yolo.cpp` is a single `yolo` command reading a standard Ultralytics `data.yaml`
+(`path`/`train`/`val`/`nc`/`names`):
+```sh
+bash /c/prog/claude/cc5.sh -std:c++20 -O2 -EHsc -Ipure/third_party pure/yolo.cpp -Fe:yolo.exe -Fo:scratch/
+./yolo train  --data data.yaml --weights init.pt --imgsz 640 --epochs 100 --batch 16 \
+              --mosaic 1 --mixup 1 --close-mosaic 10          # HSV/affine/flip on by default
+./yolo val    --data data.yaml --weights best.pt --imgsz 640  # -> mAP@0.5 and mAP@0.5:0.95
+./yolo detect --weights best.pt --source img.jpg --out out.png --data data.yaml
+```
+Augmentation (mosaic, mixup, random-affine, HSV, flip, close-mosaic) lives in
+`pure/dataset.hpp` (`AugCfg`). `yolo export` points at the standalone ONNX exporter.
+Remaining work is tracked in **[RESUME.md](RESUME.md)**.

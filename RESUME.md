@@ -1,35 +1,46 @@
 # RESUME — remaining work
 
-Status of the pure-C++ YOLOv5 training toolchain and what's left to match Ultralytics-quality
-training. Verified items are in [README.md](README.md); this file is the forward-looking TODO.
+Status of the pure-C++ training toolchain (yolov5) and what's left to make it a full replacement
+for Ultralytics-quality training. Verified items live in [README.md](README.md); this file
+is the forward-looking TODO.
 
 ## Done (pure C++, no Python at run time)
-- Pure autograd engine; YOLOv5 forward + **anchor-based loss** (build_targets + CIoU/obj/cls),
-  training, inference (anchor decode + NMS), COCO mAP — all verified vs the yolov5 reference.
-- All sizes (n/s/m/l/x): arch (`pure/ref/arch/<model>/`) + `make_init_pt` generate initial
-  weights in C++ with zero Python; checkpoints load back into the yolov5 reference (0 unexpected).
+- Engine + all 4 YOLOs (v5/v8/v11/x), all sizes (n/s/m/l/x), forward/loss/train/infer/mAP/ONNX/`.pt`.
 - Real training CLI (`pure/train_cli.cpp`): dataset scan → shuffled mini-batches → epochs →
-  build_targets → loss → Adam(warmup+cosine+wd) → per-epoch val mAP@0.5 → `best.pt`/`last.pt`.
-- **Standard-YOLO dataset ingestion** — dir scan (`images/`↔`labels/`), normalised
-  `cls xc yc w h`, arbitrary-size images letterboxed (`pure/dataset.hpp`). Verified: val
-  mAP@0.5 → 0.93 on the synthetic set; `best.pt` reloads in the reference (0 unexpected).
-- **Mosaic augmentation** + horizontal flip + brightness. `train_cli … <imgsz> <mosaic>`.
-- GPU/CUDA seam (`pure/backend.hpp`); conv/matmul route through `bk::`.
+  assignment → loss → Adam(warmup+cosine+wd) → per-epoch val mAP@0.5 → `best.pt`/`last.pt`.
+- Initial-weight `.pt` generated in C++ (`pure/make_init_pt.cpp`, `rand`/`from`), all sizes,
+  zero-Python bootstrap; checkpoints load back into Ultralytics/reference (0 unexpected).
+- **Standard-YOLO dataset ingestion** — directory scan (`images/`↔`labels/`), normalised
+  `cls xc yc w h` labels, arbitrary-size images letterboxed (`pure/dataset.hpp`
+  `read_yolo_dataset` / `load_boxes_orig`). Verified: val mAP → 0.97 on the synthetic set.
+- **Augmentation** — mosaic + mixup + random-affine (rotate/scale/shear/translate) + HSV +
+  flip, with **close-mosaic** (disable for last N epochs). Toggle via `AugCfg` / CLI flags.
+- **Unified `yolo` CLI** (`pure/yolo.cpp`) reading `data.yaml`: `train` / `val` / `detect`
+  (`export` still delegates to the standalone `onnx_export` — see remaining #3).
+  Val reports **mAP@0.5 and mAP@0.5:0.95**.
+- GPU/CUDA seam (`pure/backend.hpp`) present in all four; conv/matmul route through `bk::`.
+  GPU training done for all four (per the parallel session).
 
 ## Remaining (roughly in priority order)
-1. **Real-dataset convergence parity** — train on COCO128 (or similar), compare final
-   mAP@0.5:0.95 to Ultralytics yolov5. Only synthetic convergence has been checked.
-2. **Richer augmentation** — HSV colour jitter, random affine (scale/translate/rotate/shear),
-   mixup, "close mosaic for the last N epochs". Only flip + brightness + mosaic exist today.
-3. **`data.yaml` + unified CLI** — parse `data.yaml` (paths, `nc`, `names`) and add
-   `train`/`val`/`detect`/`export` subcommands.
-4. **Training-quality features** — EMA, resume-from-checkpoint, multi-scale, rect val,
-   label smoothing, warmup-bias-lr, mAP@0.5:0.95 in the val loop (only mAP@0.5 printed now).
-5. **Speed** — verify the GPU path on real hardware.
+1. **Real-dataset convergence parity** — train on COCO128 (or similar) and compare final
+   mAP@0.5:0.95 against Ultralytics. This is the key "results, not just pipeline" validation.
+   Nothing beyond synthetic data has been checked for convergence quality yet.
+2. **Custom `nc`** — the head is fixed at 80 classes; training on a dataset with `nc != 80`
+   needs the cls head resized + re-initialised (make_init_pt could emit an `nc`-sized head).
+   Today class ids must be < 80.
+3. **`export` in the unified CLI** — fold BN from the `.pt` and emit ONNX in-CLI (today
+   `yolo export` points at the standalone, onnxruntime-verified `onnx_export`).
+4. **Training-quality features** — EMA weights, resume-from-checkpoint, multi-scale, rect val,
+   label smoothing, separate bias/BN LR + warmup-bias-lr. (mAP@0.5:0.95 in val — done.)
+5. **Speed** — yolox uses a per-image forward summed per minibatch (batch it like v8).
+6. **CPU speed on Apple Silicon** — the CUDA seam doesn't help on Mac (Metal≠CUDA). Add a
+   BLAS path to `bk::gemm_hosted` (Apple Accelerate / OpenBLAS) for a big CPU speedup without
+   a GPU; a full Metal backend is a much larger, lower-priority effort.
 
 ## Notes / gotchas
-- Everything internal is xyxy in the **letterboxed SxS pixel** space; `load_boxes_orig`
-  reads either label format into original pixels, then `lb_map` applies the letterbox.
-- The yolov5 hub reference wraps the net at `m.model` — load checkpoints into `m.model`.
-- `train_cli` uses unbuffered stdout so progress shows in redirected/background runs.
-- Build: MSVC via `C:/prog/claude/cc5.sh`; `scratch/` must pre-exist.
+- Label coords: internally everything is xyxy in the **letterboxed SxS pixel** space; GT and
+  decoded detections share it, so val mAP is apples-to-apples. `load_boxes_orig` reads either
+  format into original pixels, then `lb_map` applies the letterbox transform.
+- `make_init_pt … rand` trains but won't converge on tiny data; use `from <pretrained.pt>`
+  for transfer learning.
+- Build: MSVC via `C:/prog/claude/cc5.sh`; `scratch/` must pre-exist; vcvars hangs here.
