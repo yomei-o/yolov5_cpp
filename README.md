@@ -43,6 +43,50 @@ g++ -std=c++20 -O2 -Ipure/third_party pure/m5_demo.cpp -o m5_demo   # or cl /std
 These match yolov5n's own output (boxes ~2e-4 on the letterboxed input, same classes —
 see `pure/m4_infer.cpp`). Decode + NMS are in `pure/infer5.hpp`.
 
+## Train with zero Python — the full loop in C++
+
+`pure/train_cli.cpp` is a real training environment, pure C++, **no Python at run time**:
+dataset scan → shuffled mini-batches (hflip + brightness augmentation) over epochs →
+`build_targets` (anchor matching) → v5 loss (box CIoU + obj/cls BCE) → Adam (warmup +
+cosine LR + weight decay) → **per-epoch validation mAP@0.5** → save `best.pt` / `last.pt`
+via the pure-C++ `.pt` writer.
+
+```sh
+cl /std:c++20 /O2 /EHsc /Ipure\third_party pure\make_init_pt.cpp   # or g++ ...
+cl /std:c++20 /O2 /EHsc /Ipure\third_party pure\train_cli.cpp
+
+./make_init_pt init.pt from yolov5n.pt      # C++ builds the initial-weights .pt (see below)
+./train_cli pure/ref/data_synth/list.txt pure/ref/data_synth/val.txt 8 4 init.pt
+#   epoch 1/8  loss 2.37  val mAP@0.5 0.039
+#   epoch 7/8  loss 1.14  val mAP@0.5 1.000   -> best.pt / last.pt (pure C++)
+```
+
+The C++-trained `best.pt` loads straight back into the yolov5 reference model
+(`torch.hub.load('ultralytics/yolov5','yolov5n',autoshape=False)`, `m.model.load_state_dict`,
+0 unexpected keys) and detects the right classes — train/retrain in C++, drop the result
+into any PyTorch pipeline. (Checkpoint keys are paired by **name** via `names.txt`, because
+the engine's C3 emit order differs from PyTorch's `state_dict` order.)
+
+### Make the initial-weights `.pt` in C++ — no Python needed to bootstrap
+
+`pure/make_init_pt.cpp` writes a valid `state_dict` `.pt` entirely in C++, driven only by
+two tiny text files that ship in the repo — `pure/ref/data_net/manifest_unfused.txt`
+(per-layer shapes) and `names.txt` (state_dict keys). No Python, no libtorch:
+
+- **`rand`** — He/Kaiming random init, fully self-contained (needs neither a pretrained
+  file nor Python). Loads into the yolov5 reference model (0 unexpected). Trains
+  mechanically, but from-scratch convergence needs real data volume + many epochs.
+- **`from <pretrained.pt>`** — copies pretrained values read in C++ by `ptio`
+  (`load_pt` for a state_dict, `load_pt_module` for a raw checkpoint). This is the
+  practical **transfer-learning** init; the only input is the `.pt` file itself (just
+  download it — no Python). Verified to reproduce the fine-tune run exactly (mAP → 1.000).
+
+`train_cli` starts from that init `.pt` (`load_net_unfused_pt` in `pure/net5_unfused.hpp`,
+arch from the manifest, tensors looked up by `names.txt` key) when it's present, else from
+the `.bin` export. So a fresh clone bootstraps and trains with **zero Python**:
+`make_init_pt` → `init.pt` → `train_cli`. Regenerate the synthetic set with
+`python pure/ref/make_synth.py 96 24` (the one Python touch, only to fabricate demo images).
+
 ## Build
 ```sh
 # reference weights (needs: torch, and the yolov5 hub deps pandas/seaborn/… )
