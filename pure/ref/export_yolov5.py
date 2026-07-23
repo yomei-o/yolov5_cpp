@@ -53,8 +53,8 @@ def mk(i):
     return hook
 for i in range(3): det.m[i].register_forward_hook(mk(i))
 torch.manual_seed(0)
-x = torch.randn(1, 3, IMG, IMG)
-mdl = m.model.float(); mdl.train()
+x = torch.randn(1, 3, IMG, IMG).cpu()
+mdl = m.model.float().cpu(); mdl.train()   # force CPU (torch.hub yolov5 auto-moves to GPU on Colab)
 for mod in mdl.modules():
     if isinstance(mod, torch.nn.BatchNorm2d): mod.eval()
 with torch.no_grad(): mdl(x)
