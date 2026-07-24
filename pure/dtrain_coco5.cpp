@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
   std::vector<DT> params = dnet5_params(prov);
   DAdam opt(params, 1e-3f);
   auto dep = dnet5_depths(DN);
-  auto anchors = rd(DN + "anchors.bin");
+  auto anchors = rd("pure/ref/data_net/anchors.bin");   // yolov5 anchors are shared across all sizes
   Dataset tr = read_yolo_dataset(dir, S);
   std::vector<int64_t> grids = {S/8, S/16, S/32};
   printf("%s train=%zu imgsz=%lld batch=%d epochs=%d\n", model.c_str(), tr.items.size(), (long long)S, BATCH, EPOCHS);
