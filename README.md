@@ -112,6 +112,23 @@ the `.bin` export. So a fresh clone bootstraps and trains with **zero Python**:
 `make_init_pt` → `init.pt` → `train_cli`. Regenerate the synthetic set with
 `python pure/ref/make_synth.py 96 24` (the one Python touch, only to fabricate demo images).
 
+## Device-resident GPU track (`pure/dtensor.hpp`, `pure/dnet5.hpp`)
+
+A second engine keeps tensors **device-resident** (data/grad in a `thrust::device_vector`) so
+there are no per-op host↔device copies. The **same source builds CPU or GPU** via Thrust's
+switchable device system (no CUDA lock-in); optional cuBLAS GEMM fast path with `-DUSE_CUBLAS`.
+`dnet5.hpp` is a size-agnostic device yolov5 (C3 / SPPF / anchor Detect), any of n/s/m/l/x.
+```sh
+# GPU:  nvcc -x cu -O2 -std=c++17 --extended-lambda -arch=native -DUSE_CUDA -DUSE_CUBLAS \
+#            -Ipure/third_party pure/dtrain_coco5.cpp -lcublas -o dtrain_coco5
+./dtrain_coco5 <images_dir> <imgsz> <batch> <epochs> [model=yolov5n]   # saves last.pt/best.pt
+```
+Verified on a Colab T4: the full forward matches the CPU engine (~4e-4), and real COCO128
+training with the anchor loss runs device-resident (~23 s/epoch at 320). Needs CUDA's CCCL
+(Thrust) headers; the plain `pure/` engine needs none.
+
+**Ready-to-run Colab notebook**: [Train COCO128 → detect → show image](https://colab.research.google.com/github/yomei-o/yolov5_cpp/blob/main/colab/train_detect_coco320.ipynb)
+
 ## Build
 ```sh
 # reference weights (needs: torch, and the yolov5 hub deps pandas/seaborn/… )
