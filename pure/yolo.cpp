@@ -82,7 +82,14 @@ static const char* COCO[80] = {
   "toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear","hair drier","toothbrush"};
 
 static ProviderU load_model(const std::string& weights, std::vector<int64_t>& dep) {
-  { std::ifstream f(DN + "depths.txt"); int64_t v; while (f >> v) dep.push_back(v); }
+  // depths.txt = per-stage C3 repeat counts (the arch). Missing/empty would leave `dep`
+  // empty -> a broken forward that emits NaN, so fail LOUDLY instead of silently.
+  { std::ifstream f(DN + "depths.txt");
+    if (!f) { printf("cannot open %sdepths.txt (yolov5 depth descriptor).\n"
+                     "  It ships per size under pure/ref/arch/yolov5<s/m/l/x>/; restore it or run the exporter.\n",
+                     DN.c_str()); std::exit(1); }
+    int64_t v; while (f >> v) dep.push_back(v);
+    if (dep.empty()) { printf("empty %sdepths.txt (expected per-stage repeat counts)\n", DN.c_str()); std::exit(1); } }
   if (dep.empty()) dep = {1,2,3,1,1,1,1,1};
   std::ifstream t(weights);
   if (t.good()) { printf("weights <- %s (pure C++)\n", weights.c_str()); return load_net_unfused_pt(DN, weights); }
