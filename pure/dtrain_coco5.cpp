@@ -20,17 +20,19 @@ int main(int argc, char** argv) {
   std::string dir = argc>1?argv[1]:"pure/ref/data_yolo/images/train";
   int64_t S = argc>2?atoll(argv[2]):96;
   int BATCH = argc>3?atoi(argv[3]):4, EPOCHS = argc>4?atoi(argv[4]):2;
-  const std::string DN = "pure/ref/data_net/";
+  std::string model = argc>5?argv[5]:"yolov5n";
+  const std::string DN = (model=="yolov5n") ? "pure/ref/data_net/" : "pure/ref/arch/"+model+"/";
+  const std::string weights = model + ".pt";
   const int64_t NC = 80, NA = 3, NO = 85;
 
-  ProvD5 prov = dnet5_build(DN, "yolov5n.pt");
+  ProvD5 prov = dnet5_build(DN, weights);
   std::vector<DT> params = dnet5_params(prov);
   DAdam opt(params, 1e-3f);
   auto dep = dnet5_depths(DN);
   auto anchors = rd(DN + "anchors.bin");
   Dataset tr = read_yolo_dataset(dir, S);
   std::vector<int64_t> grids = {S/8, S/16, S/32};
-  printf("yolov5n train=%zu imgsz=%lld batch=%d epochs=%d\n", tr.items.size(), (long long)S, BATCH, EPOCHS);
+  printf("%s train=%zu imgsz=%lld batch=%d epochs=%d\n", model.c_str(), tr.items.size(), (long long)S, BATCH, EPOCHS);
 
   std::vector<int> order(tr.items.size()); std::iota(order.begin(),order.end(),0); std::mt19937 rng(0);
   double best = 1e30;
@@ -66,7 +68,7 @@ int main(int argc, char** argv) {
     if (avg < best) { best = avg; dnet5_save(prov, DN, "best.pt"); }
     printf("epoch %d/%d  loss %.4f  %.1f s/epoch%s\n", ep+1, EPOCHS, avg, secs, avg<=best?"  *best*":"");
   }
-  printf("done. best loss %.4f. wrote last.pt / best.pt (pure C++, yolov5n)\n", best);
+  printf("done. best loss %.4f. wrote last.pt / best.pt (pure C++, %s)\n", best, model.c_str());
 #if defined(__CUDACC__)
   printf("backend: GPU (CUDA)\n");
 #else
