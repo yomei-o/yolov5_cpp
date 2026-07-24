@@ -47,7 +47,12 @@ is the forward-looking TODO.
 
 7. **Verify the unified `train_cli`/`yolo.cpp` under a CUDA build** — compile with `nvcc -DUSE_CUDA` and run COCO128 end-to-end on a (free-Colab) T4. The CUDA seam + a training loop were verified on T4, but the new dataset-ingestion + augmentation CLI path has not been built/run under nvcc yet (aug/dataset are host-side; conv/matmul auto-route to `bk::` on GPU). Est. COCO128/640px/100ep: T4 GPU ~7-20 min; CPU ~a day (measured ~5.7 s/image fwd+bwd at 640px, naive GEMM) so a real GPU is the fix.
 
-## Port the Eigen + cuDNN compute backends from yolov8_cpp  ← next task
+## Eigen + cuDNN compute backends (ported from yolov8_cpp)  ✅ DONE 2026-07-25
+
+Ported and (CPU side) verified locally: Eigen gemm 6.5×, ThrustCPU dnet5_test MATCH, train_cli
+`-DUSE_EIGEN` builds, `nvcc -DUSE_CUDA` clean. cuDNN path is in and guard-isolated; verify it on
+Colab via `colab/dnet_cudnn_test.ipynb`. Original porting notes below for reference.
+
 
 yolov8_cpp gained two **opt-in** compute backends (both on main, verified on a Colab T4). The
 seam is identical across all repos (`pure/backend.hpp` `bk::gemm*` + `pure/dtensor.hpp` `dconv2d`),
