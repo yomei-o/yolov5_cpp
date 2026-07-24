@@ -127,7 +127,28 @@ Verified on a Colab T4: the full forward matches the CPU engine (~4e-4), and rea
 training with the anchor loss runs device-resident (~23 s/epoch at 320). Needs CUDA's CCCL
 (Thrust) headers; the plain `pure/` engine needs none.
 
-**Ready-to-run Colab notebook**: [Train COCO128 → detect → show image](https://colab.research.google.com/github/yomei-o/yolov5_cpp/blob/main/colab/train_detect_coco320.ipynb)
+**Ready-to-run Colab notebooks**:
+- [Train COCO128 → detect → show image](https://colab.research.google.com/github/yomei-o/yolov5_cpp/blob/main/colab/train_detect_coco320.ipynb)
+- [cuDNN backend — parity + speed](https://colab.research.google.com/github/yomei-o/yolov5_cpp/blob/main/colab/dnet_cudnn_test.ipynb)
+
+### Compute backends — one source, five builds
+
+The GEMM/conv the engine runs through is chosen **at compile time** by flags — same code. Two
+engines: the **scratch** engine (`autograd.hpp`, `train_cli`/`yolo`, CPU only) and the
+**device-resident** engine (`dtensor.hpp`, `dtrain_coco5`/`dnet5_test`).
+
+| # | build | flags | conv/GEMM | use |
+|---|-------|-------|-----------|-----|
+| 1 | **full-scratch CPU** | *(none)* | hand-written loops | learning / reference oracle |
+| 2 | **CPU + Eigen** | `-DUSE_EIGEN -Ipure/third_party/eigen_flat` + `/arch:AVX2` (cl) or `-march=native` (g++) | Eigen blocked+SIMD | fast CPU training (~6–12× the gemm) |
+| 3 | **GPU Thrust** | `nvcc -DUSE_CUDA` (`+ -DUSE_CUBLAS -lcublas`) | Thrust kernels / cuBLAS | from-scratch GPU training |
+| 4 | **GPU cuDNN** | `nvcc -DUSE_CUDA -DUSE_CUDNN -lcudnn` (`+ -DUSE_CUBLAS`) | cuDNN direct/Winograd | fastest GPU training |
+| – | *(debug)* **Thrust-CPU** | `-DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP` (no `USE_CUDA`) | device engine on CPU | verify device code with **no GPU** |
+
+`USE_EIGEN` is CPU-only opt-in (vendored flat Eigen at `pure/third_party/eigen_flat/`, entry
+`Eigen_Core.h`); `USE_CUDNN` is GPU-only and swaps the whole conv (fwd + bwd) for cuDNN
+(`CROSS_CORRELATION`, matches im2col; fp32, may relax to ~1e-2 if cuDNN picks a TF32 algo). All
+flags are independent add-ons — the default (no flags) is always the readable from-scratch engine.
 
 ## Build
 ```sh

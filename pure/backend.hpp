@@ -21,6 +21,9 @@
 #else
   #include "parallel.hpp"          // CPU parallel_for (OpenMP / std::thread)
   #define BK_HD
+  #ifdef USE_EIGEN
+    #include "Eigen_Core.h"        // vendored flat Eigen (GEMM). build: -Ipure/third_party/eigen_flat -DUSE_EIGEN (and /arch:AVX2 or -march=native)
+  #endif
 #endif
 
 namespace bk {
@@ -130,6 +133,27 @@ inline void gemm_tn(const float* A, const float* B, float* C, int64_t M, int64_t
     C[idx] = s + (beta == 0.f ? 0.f : beta * C[idx]);
   });
 #endif
+}
+#elif defined(USE_EIGEN)
+// Eigen GEMM backend (CPU, opt-in): the same im2col+GEMM conv, but the GEMM is Eigen's
+// blocked + SIMD kernel — ~10x+ over the plain loops below. Row-major float maps; beta
+// gives C = A·B + beta·C. Build: -DUSE_EIGEN -Ipure/third_party/eigen_flat (+ AVX flag).
+namespace eig_ { using RM = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+                 using Map = Eigen::Map<RM>; using CMap = Eigen::Map<const RM>; }
+inline void gemm(const float* A, const float* B, float* C, int64_t M, int64_t K, int64_t N, float beta = 0.f) {
+  eig_::CMap Am(A, M, K), Bm(B, K, N); eig_::Map Cm(C, M, N);
+  if (beta == 0.f) Cm.noalias() = Am * Bm;
+  else { if (beta != 1.f) Cm *= beta; Cm.noalias() += Am * Bm; }
+}
+inline void gemm_nt(const float* A, const float* B, float* C, int64_t M, int64_t N, int64_t Kc, float beta = 0.f) {
+  eig_::CMap Am(A, M, Kc), Bm(B, N, Kc); eig_::Map Cm(C, M, N);
+  if (beta == 0.f) Cm.noalias() = Am * Bm.transpose();
+  else { if (beta != 1.f) Cm *= beta; Cm.noalias() += Am * Bm.transpose(); }
+}
+inline void gemm_tn(const float* A, const float* B, float* C, int64_t M, int64_t N, int64_t Kc, float beta = 0.f) {
+  eig_::CMap Am(A, Kc, M), Bm(B, Kc, N); eig_::Map Cm(C, M, N);
+  if (beta == 0.f) Cm.noalias() = Am.transpose() * Bm;
+  else { if (beta != 1.f) Cm *= beta; Cm.noalias() += Am.transpose() * Bm; }
 }
 #else
 inline void gemm(const float* A, const float* B, float* C, int64_t M, int64_t K, int64_t N, float beta = 0.f) {

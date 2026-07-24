@@ -24,6 +24,15 @@
   #define DHD
 #endif
 
+// Optional cuDNN conv backend (GPU only, opt-in): build with -DUSE_CUDA -DUSE_CUDNN -lcudnn.
+// Replaces the im2col+GEMM conv with cuDNN's direct/Winograd kernels (fwd + bwd data/filter/bias).
+#if defined(USE_CUDA) && defined(USE_CUDNN)
+  #include <cudnn.h>
+  namespace bk { inline cudnnHandle_t bk_cudnn() { static cudnnHandle_t h = nullptr; if (!h) cudnnCreate(&h); return h; } }
+  #define CUDNN_CHECK(x) do { cudnnStatus_t s_=(x); if (s_!=CUDNN_STATUS_SUCCESS) { \
+      fprintf(stderr,"cuDNN error %d (%s) at %s:%d\n",(int)s_,cudnnGetErrorString(s_),__FILE__,__LINE__); std::abort(); } } while(0)
+#endif
+
 // ---- functors (portable: real device functions under nvcc, plain host otherwise) ----
 struct SiLUf   { DHD float operator()(float x) const { return x / (1.f + expf(-x)); } };
 struct dSiLUf  { DHD float operator()(float x) const { float s = 1.f/(1.f+expf(-x)); return s*(1.f + x*(1.f - s)); } };
@@ -138,6 +147,59 @@ inline DT dconv2d(DT in, DT w, DT bias, int64_t stride, int64_t pad) {
   int64_t OH = (H + 2*pad - kh)/stride + 1, OW = (Wd + 2*pad - kw)/stride + 1;
   int64_t K = Cin*kh*kw, P = OH*OW;
   DT o = dmake({N, Cout, OH, OW});
+#if defined(USE_CUDA) && defined(USE_CUDNN)
+  // ---- cuDNN backend: direct/Winograd conv (fwd + bwd data/filter/bias). CROSS_CORRELATION
+  // matches im2col (no kernel flip); beta=1 on the bwd calls accumulates into grad (like +=).
+  {
+    cudnnHandle_t h = bk::bk_cudnn();
+    cudnnTensorDescriptor_t xd, yd; cudnnFilterDescriptor_t fd; cudnnConvolutionDescriptor_t cvd;
+    CUDNN_CHECK(cudnnCreateTensorDescriptor(&xd)); CUDNN_CHECK(cudnnCreateTensorDescriptor(&yd));
+    CUDNN_CHECK(cudnnCreateFilterDescriptor(&fd)); CUDNN_CHECK(cudnnCreateConvolutionDescriptor(&cvd));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(xd, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, (int)N,(int)Cin,(int)H,(int)Wd));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(yd, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, (int)N,(int)Cout,(int)OH,(int)OW));
+    CUDNN_CHECK(cudnnSetFilter4dDescriptor(fd, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, (int)Cout,(int)Cin,(int)kh,(int)kw));
+    CUDNN_CHECK(cudnnSetConvolution2dDescriptor(cvd, (int)pad,(int)pad,(int)stride,(int)stride,1,1, CUDNN_CROSS_CORRELATION, CUDNN_DATA_FLOAT));
+    cudnnConvolutionFwdAlgoPerf_t pf; int got=0;
+    CUDNN_CHECK(cudnnGetConvolutionForwardAlgorithm_v7(h, xd, fd, cvd, yd, 1, &got, &pf));
+    size_t wsN=0; CUDNN_CHECK(cudnnGetConvolutionForwardWorkspaceSize(h, xd, fd, cvd, yd, pf.algo, &wsN));
+    thrust::device_vector<char> ws(wsN); void* wsp = wsN ? thrust::raw_pointer_cast(ws.data()) : nullptr;
+    float one=1.f, zero=0.f;
+    CUDNN_CHECK(cudnnConvolutionForward(h, &one, xd, in->dp(), fd, w->dp(), cvd, pf.algo, wsp, wsN, &zero, yd, o->dp()));
+    if (bias) { cudnnTensorDescriptor_t bd; CUDNN_CHECK(cudnnCreateTensorDescriptor(&bd));
+      CUDNN_CHECK(cudnnSetTensor4dDescriptor(bd, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1,(int)Cout,1,1));
+      CUDNN_CHECK(cudnnAddTensor(h, &one, bd, bias->dp(), &one, yd, o->dp())); cudnnDestroyTensorDescriptor(bd); }
+    cudnnDestroyTensorDescriptor(xd); cudnnDestroyTensorDescriptor(yd);
+    cudnnDestroyFilterDescriptor(fd); cudnnDestroyConvolutionDescriptor(cvd);
+  }
+  o->parents = bias ? std::vector<DT>{in,w,bias} : std::vector<DT>{in,w};
+  o->backward_fn = [in,w,bias,N,Cin,H,Wd,Cout,kh,kw,OH,OW,stride,pad, oo=o.get()]() {
+    cudnnHandle_t h = bk::bk_cudnn();
+    cudnnTensorDescriptor_t xd, yd; cudnnFilterDescriptor_t fd; cudnnConvolutionDescriptor_t cvd;
+    cudnnCreateTensorDescriptor(&xd); cudnnCreateTensorDescriptor(&yd);
+    cudnnCreateFilterDescriptor(&fd); cudnnCreateConvolutionDescriptor(&cvd);
+    cudnnSetTensor4dDescriptor(xd, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, (int)N,(int)Cin,(int)H,(int)Wd);
+    cudnnSetTensor4dDescriptor(yd, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, (int)N,(int)Cout,(int)OH,(int)OW);
+    cudnnSetFilter4dDescriptor(fd, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, (int)Cout,(int)Cin,(int)kh,(int)kw);
+    cudnnSetConvolution2dDescriptor(cvd, (int)pad,(int)pad,(int)stride,(int)stride,1,1, CUDNN_CROSS_CORRELATION, CUDNN_DATA_FLOAT);
+    float one=1.f;
+    if (bias) { cudnnTensorDescriptor_t bd; cudnnCreateTensorDescriptor(&bd);
+      cudnnSetTensor4dDescriptor(bd, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1,(int)Cout,1,1);
+      CUDNN_CHECK(cudnnConvolutionBackwardBias(h, &one, yd, oo->gp(), &one, bd, bias->gp())); cudnnDestroyTensorDescriptor(bd); }
+    { cudnnConvolutionBwdFilterAlgoPerf_t pf; int got=0;                    // dW += dO ⊛ in
+      CUDNN_CHECK(cudnnGetConvolutionBackwardFilterAlgorithm_v7(h, xd, yd, cvd, fd, 1, &got, &pf));
+      size_t wsN=0; CUDNN_CHECK(cudnnGetConvolutionBackwardFilterWorkspaceSize(h, xd, yd, cvd, fd, pf.algo, &wsN));
+      thrust::device_vector<char> ws(wsN); void* wsp = wsN ? thrust::raw_pointer_cast(ws.data()) : nullptr;
+      CUDNN_CHECK(cudnnConvolutionBackwardFilter(h, &one, xd, in->dp(), yd, oo->gp(), cvd, pf.algo, wsp, wsN, &one, fd, w->gp())); }
+    { cudnnConvolutionBwdDataAlgoPerf_t pd; int got=0;                      // dIn += dO ⊛ w
+      CUDNN_CHECK(cudnnGetConvolutionBackwardDataAlgorithm_v7(h, fd, yd, cvd, xd, 1, &got, &pd));
+      size_t wsN=0; CUDNN_CHECK(cudnnGetConvolutionBackwardDataWorkspaceSize(h, fd, yd, cvd, xd, pd.algo, &wsN));
+      thrust::device_vector<char> ws(wsN); void* wsp = wsN ? thrust::raw_pointer_cast(ws.data()) : nullptr;
+      CUDNN_CHECK(cudnnConvolutionBackwardData(h, &one, fd, w->dp(), yd, oo->gp(), cvd, pd.algo, wsp, wsN, &one, xd, in->gp())); }
+    cudnnDestroyTensorDescriptor(xd); cudnnDestroyTensorDescriptor(yd);
+    cudnnDestroyFilterDescriptor(fd); cudnnDestroyConvolutionDescriptor(cvd);
+  };
+  return o;
+#endif
   { thrust::device_vector<float> col(K*P); float* colp = thrust::raw_pointer_cast(col.data());
     for (int64_t n = 0; n < N; ++n) {
       dim2col(in->dp() + n*Cin*H*Wd, Cin, H, Wd, kh, kw, OH, OW, stride, pad, colp);
